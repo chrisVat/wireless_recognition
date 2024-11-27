@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Sync</title>
+</head>
+<body>
+    <h1>Time Synchronization</h1>
+    <p id="time-difference"></p>
+    <p id="debug-info"></p>
+
+    <script>
+        async function getServerTime() {
+            try {
+                // Fetch the server time from the server
+                const startClientTime = new Date().getTime(); // Record client start time
+                const response = await fetch('/sync_time');
+                const serverTimeData = await response.json();
+                const endClientTime = new Date().getTime();   // Record client end time
+                
+                const serverTime = serverTimeData.server_time;
+                const roundTripTime = endClientTime - startClientTime;
+                const latency = roundTripTime / 2;
+
+                // Adjust server time for latency
+                const adjustedServerTime = serverTime + latency;
+                const currentClientTime = new Date().getTime();
+
+                // Calculate time difference (SERVER - CLIENT)
+                const timeDifference = adjustedServerTime - currentClientTime;
+
+                // Send the time difference back to the server
+                await fetch(`/report_time_diff?diff=${timeDifference}`, {
+                    method: 'POST'
+                });
+
+                return timeDifference;
+            } catch (error) {
+                document.getElementById("debug-info").textContent = "Error: " + error.message;
+            }
+        }
+
+        async function syncTimeRigorous(samples = 10) {
+            let differences = [];
+            for (let i = 0; i < samples; i++) {
+                const diff = await getServerTime();
+                differences.push(diff);
+                await new Promise(r => setTimeout(r, 500)); // Wait 500 ms between samples
+            }
+
+            // Sort the differences to find the median
+            differences.sort((a, b) => a - b);
+            const middle = Math.floor(differences.length / 2);
+
+            let medianDifference;
+            if (differences.length % 2 === 0) {
+                // If even number of samples, average the two middle values
+                medianDifference = (differences[middle - 1] + differences[middle]) / 2;
+            } else {
+                // If odd, take the middle value
+                medianDifference = differences[middle];
+            }
+
+            document.getElementById("time-difference").textContent =
+                `Median time difference between client and server: ${medianDifference.toFixed(2)} ms`;
+
+            await fetch(`/report_final_time_diff?diff=${medianDifference}`, {
+                method: 'POST'
+            });
+
+            
+        }
+
+        // Run the time sync function
+        syncTimeRigorous(10);
+    </script>
+</body>
+</html>
